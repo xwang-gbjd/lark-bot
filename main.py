@@ -16,7 +16,7 @@ processed_messages = TTLCache(maxsize=10000, ttl=3600)  # TTL 单位为秒
 # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive
 def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     message_id = data.event.message.message_id
-    user_id = data.event.message.sender.sender_id.user_id
+    user_id = data.event.sender.sender_id.user_id
 
     # 检查消息是否已经处理
     if message_id in processed_messages:
