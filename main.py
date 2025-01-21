@@ -6,7 +6,7 @@ from cachetools import TTLCache
 
 # 配置 LLM 服务的地址和 API 密钥
 LLM_SERVICE_URL = "http://10.68.14.177:5001/v1/chat-messages"
-LLM_API_KEY = "app-59pBgeciGOfUJ2kEMHP0jNPW"  # 替换为实际的 API 密钥
+LLM_API_KEY = "app-uNN7p6Eq12Nnx9wzVUIqPOuF"  # 替换为实际的 API 密钥
 
 # 创建一个缓存，最大存储 10000 条消息，条目有效期为 1 小时
 processed_messages = TTLCache(maxsize=10000, ttl=3600)  # TTL 单位为秒
