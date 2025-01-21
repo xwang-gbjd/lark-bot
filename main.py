@@ -60,7 +60,7 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
 
     # 将 LLM 回复作为内容
     content = json.dumps({
-        "text": f"LLM 回复：\n{llm_reply}"
+        "text": f"机器人回复：\n{llm_reply}"
     })
 
     if data.event.message.chat_type == "p2p":
