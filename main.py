@@ -16,19 +16,20 @@ processed_messages = TTLCache(maxsize=10000, ttl=3600)  # TTL 单位为秒
 # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive
 def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     message_id = data.event.message.message_id
-    
+    user_id = data.event.message.sender.sender_id.user_id
+
     # 检查消息是否已经处理
     if message_id in processed_messages:
         print(f"消息已处理，跳过: {message_id}")
         return
     processed_messages[message_id] = True  # 记录消息
-    
+
     res_content = ""
     if data.event.message.message_type == "text":
         res_content = json.loads(data.event.message.content)["text"]
     else:
         res_content = "解析消息失败，请发送文本消息\nparse message failed, please send text message"
-    
+
     # 调用 LLM 服务
     try:
         # 构建请求体
@@ -37,9 +38,9 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
             "inputs": {},  # 可选的变量值
             "response_mode": "blocking",  # 使用阻塞模式
             "conversation_id": "",  # 如需保持会话上下文，可填入实际会话ID
-            "user": "abc-123"  # 用于标识用户，可替换为动态用户ID
+            "user": user_id  # 用于标识用户，可替换为动态用户ID
         }
-        
+
         # 发送请求
         headers = {
             "Authorization": f"Bearer {LLM_API_KEY}",
