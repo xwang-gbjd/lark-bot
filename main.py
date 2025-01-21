@@ -49,7 +49,7 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
             LLM_SERVICE_URL,
             headers=headers,
             json=payload,
-            timeout=10  # 超时时间
+            timeout=120  # 超时时间
         )
         llm_response.raise_for_status()  # 如果响应状态码不为 2xx，将引发异常
         response_data = llm_response.json()
