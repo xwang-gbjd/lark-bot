@@ -3,6 +3,8 @@ from lark_oapi.api.im.v1 import *
 import requests
 import json
 from cachetools import TTLCache
+import threading
+import time
 
 # 配置 LLM 服务的地址和 API 密钥
 LLM_SERVICE_URL = "http://10.68.14.177:5001/v1/chat-messages"
@@ -11,10 +13,57 @@ LLM_API_KEY = "app-uNN7p6Eq12Nnx9wzVUIqPOuF"  # 替换为实际的 API 密钥
 # 创建一个缓存，最大存储 10000 条消息，条目有效期为 1 小时
 processed_messages = TTLCache(maxsize=10000, ttl=3600)  # TTL 单位为秒
 
+# 创建一个缓存来存储用户的会话ID，设置7天过期
+user_conversations = TTLCache(maxsize=10000, ttl=7*24*3600)
+
 # 注册接收消息事件，处理接收到的消息。
 # Register event handler to handle received messages.
 # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive
 def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
+    # 创建一个新线程来处理消息
+    thread = threading.Thread(target=handle_message, args=(data,))
+    thread.start()
+
+def send_waiting_message(data: P2ImMessageReceiveV1):
+    waiting_content = json.dumps({
+        "zh_cn": {
+            "title": "智能体思考中",
+            "content": [[{
+                "tag": "text",
+                "text": "🤔 正在思考中，请稍候..."
+            }]]
+        }
+    })
+    
+    if data.event.message.chat_type == "p2p":
+        request = (
+            CreateMessageRequest.builder()
+            .receive_id_type("chat_id")
+            .request_body(
+                CreateMessageRequestBody.builder()
+                .receive_id(data.event.message.chat_id)
+                .msg_type("post")
+                .content(waiting_content)
+                .build()
+            )
+            .build()
+        )
+        response = client.im.v1.chat.create(request)
+    else:
+        request = (
+            ReplyMessageRequest.builder()
+            .message_id(data.event.message.message_id)
+            .request_body(
+                ReplyMessageRequestBody.builder()
+                .content(waiting_content)
+                .msg_type("post")
+                .build()
+            )
+            .build()
+        )
+        response = client.im.v1.message.reply(request)
+
+def handle_message(data: P2ImMessageReceiveV1) -> None:
     message_id = data.event.message.message_id
     user_id = data.event.sender.sender_id.user_id
 
@@ -30,18 +79,26 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     else:
         res_content = "解析消息失败，请发送文本消息\nparse message failed, please send text message"
 
-    # 调用 LLM 服务
+    # 创建一个事件对象用于控制定时器
+    timer_event = threading.Event()
+    
+    # 创建定时器线程
+    timer = threading.Timer(5.0, lambda: None if timer_event.is_set() else send_waiting_message(data))
+    timer.start()
+
     try:
-        # 构建请求体
+        # 获取现有的conversation_id，如果不存在则为空字符串
+        current_conversation_id = user_conversations.get(user_id, "")
+        
+        # 调用 LLM 服务
         payload = {
             "query": res_content,
-            "inputs": {},  # 可选的变量值
-            "response_mode": "blocking",  # 使用阻塞模式
-            "conversation_id": "",  # 如需保持会话上下文，可填入实际会话ID
-            "user": user_id  # 用于标识用户，可替换为动态用户ID
+            "inputs": {},
+            "response_mode": "blocking",
+            "conversation_id": current_conversation_id,
+            "user": user_id
         }
 
-        # 发送请求
         headers = {
             "Authorization": f"Bearer {LLM_API_KEY}",
             "Content-Type": "application/json"
@@ -50,17 +107,34 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
             LLM_SERVICE_URL,
             headers=headers,
             json=payload,
-            timeout=120  # 超时时间
+            timeout=120
         )
-        llm_response.raise_for_status()  # 如果响应状态码不为 2xx，将引发异常
+        # 设置事件，阻止发送等待消息
+        timer_event.set()
+        timer.cancel()  # 取消定时器
+        
+        llm_response.raise_for_status()
         response_data = llm_response.json()
+        print(response_data)
+        # 保存新的conversation_id
+        if "conversation_id" in response_data:
+            user_conversations[user_id] = response_data["conversation_id"]
+        
         llm_reply = response_data.get("answer", "LLM 无法处理你的请求")
     except Exception as e:
+        timer_event.set()
+        timer.cancel()  # 取消定时器
         llm_reply = f"调用 LLM 服务失败: {str(e)}"
 
     # 将 LLM 回复作为内容
     content = json.dumps({
-        "text": f"机器人回复：\n{llm_reply}"
+        "zh_cn": {
+            "title": "智能体回复",
+            "content": [[{
+                "tag": "md",
+                "text": llm_reply
+            }]]
+        }
     })
 
     if data.event.message.chat_type == "p2p":
@@ -70,7 +144,7 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
             .request_body(
                 CreateMessageRequestBody.builder()
                 .receive_id(data.event.message.chat_id)
-                .msg_type("text")
+                .msg_type("post")
                 .content(content)
                 .build()
             )
@@ -92,7 +166,7 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
             .request_body(
                 ReplyMessageRequestBody.builder()
                 .content(content)
-                .msg_type("text")
+                .msg_type("post")
                 .build()
             )
             .build()
