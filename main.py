@@ -198,6 +198,7 @@ wsClient = lark.ws.Client(
     lark.APP_SECRET,
     event_handler=event_handler,
     log_level=lark.LogLevel.DEBUG,
+    auto_reconnect=True  # 确保启用自动重连
 )
 
 
